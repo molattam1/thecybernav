@@ -4,13 +4,40 @@ export const revalidate = 0;
 
 import HomeUI from "@/components/HomeUI";
 
-type AnyObj = Record<string, any>;
-type Homepage = AnyObj;
+/* -------------------- Types -------------------- */
+type UploadDoc = {
+    url?: string;
+    alt?: string;
+    sizes?: Record<string, { url?: string }>;
+    [key: string]: unknown;
+};
 
+interface Homepage {
+    hero?: {
+        title?: string;
+        subtitle?: string;
+        primaryCTA?: string;
+        primaryLink?: string;
+        secondaryCTA?: string;
+        secondaryLink?: string;
+        deviceImage?: string | UploadDoc;
+    };
+    gallery?: {
+        title?: string;
+        description?: string;
+        items?: { label?: string; image?: string | UploadDoc }[];
+    };
+    [key: string]: unknown; // allow CMS flexibility
+}
+
+/* -------------------- env + helpers -------------------- */
 const IS_DEV = process.env.NODE_ENV !== "production";
 
-/* -------------------- tiny fetch helper -------------------- */
-async function fetchWithOptionalTimeout(url: string, init: RequestInit, ms: number) {
+async function fetchWithOptionalTimeout(
+    url: string,
+    init: RequestInit,
+    ms: number,
+) {
     if (IS_DEV || ms <= 0) return fetch(url, init);
     const ac = new AbortController();
     const to = setTimeout(() => ac.abort(), ms);
@@ -21,12 +48,10 @@ async function fetchWithOptionalTimeout(url: string, init: RequestInit, ms: numb
     }
 }
 
-/* -------------------- URL + upload resolvers -------------------- */
 function requireCmsUrl(): string {
     const base = process.env.CMS_URL ?? process.env.NEXT_PUBLIC_CMS_URL;
     if (!base) throw new Error("Missing CMS_URL or NEXT_PUBLIC_CMS_URL");
     try {
-        // also ensures it includes protocol
         return new URL(base).toString().replace(/\/$/, "");
     } catch {
         throw new Error(`Invalid CMS_URL "${base}" (must include http/https).`);
@@ -40,23 +65,27 @@ function ensureAbsolute(base: string, u?: string): string | undefined {
     return undefined;
 }
 
-function pickUrlFromUploadDoc(base: string, doc: AnyObj | undefined): string | undefined {
+function pickUrlFromUploadDoc(
+    base: string,
+    doc: UploadDoc | undefined,
+): string | undefined {
     if (!doc) return;
-    // prefer a sized variant if present
-    const sizes = doc.sizes && typeof doc.sizes === "object" ? Object.values(doc.sizes) : [];
-    const sized = (sizes as AnyObj[]).find((s) => s?.url);
+    const sizes = doc.sizes ? Object.values(doc.sizes) : [];
+    const sized = sizes.find((s) => s?.url);
     return ensureAbsolute(base, sized?.url || doc.url);
 }
 
-async function resolveUploadIdToUrl(base: string, id: string): Promise<string | undefined> {
-    // Payload REST: GET /api/media/:id
+async function resolveUploadIdToUrl(
+    base: string,
+    id: string,
+): Promise<string | undefined> {
     try {
         const res = await fetch(`${base}/api/media/${id}?depth=0`, {
             cache: "no-store",
             headers: { Accept: "application/json" },
         });
         if (!res.ok) return;
-        const json = (await res.json()) as AnyObj;
+        const json = (await res.json()) as UploadDoc;
         return pickUrlFromUploadDoc(base, json);
     } catch {
         return;
@@ -66,20 +95,16 @@ async function resolveUploadIdToUrl(base: string, id: string): Promise<string | 
 /** Normalize any "upload-ish" value (ID | doc | URL) into an absolute URL string. */
 async function toAbsoluteUploadUrl(
     base: string,
-    value: string | AnyObj | undefined,
+    value: string | UploadDoc | undefined,
 ): Promise<string | undefined> {
     if (!value) return;
 
     if (typeof value === "string") {
-        // already a URL or app-relative path?
         const maybe = ensureAbsolute(base, value);
         if (maybe) return maybe;
-
-        // probably an ID → fetch upload doc and pick url
         return await resolveUploadIdToUrl(base, value);
     }
 
-    // object with { url, sizes }
     return pickUrlFromUploadDoc(base, value);
 }
 
@@ -88,7 +113,6 @@ async function getHomepageContent(locale: string): Promise<Homepage> {
     const CMS_BASE = requireCmsUrl();
     const u = new URL("/api/globals/homepage", CMS_BASE);
     u.searchParams.set("locale", locale || "en");
-    // depth=2 ensures upload relations come hydrated when possible
     u.searchParams.set("depth", "2");
 
     const init: RequestInit = {
@@ -104,47 +128,51 @@ async function getHomepageContent(locale: string): Promise<Homepage> {
         }
         const homepage = (await res.json()) as Homepage;
 
-        // --- ONE-TIME FIX: force hero.deviceImage to be an absolute URL string ---
-        // (works whether deviceImage is an ID, an object, or a relative url)
-        const hero = homepage?.hero as AnyObj | undefined;
-        if (hero) {
-            hero.deviceImage = await toAbsoluteUploadUrl(CMS_BASE, hero.deviceImage);
+        // Normalize hero deviceImage
+        if (homepage.hero) {
+            homepage.hero.deviceImage = await toAbsoluteUploadUrl(
+                CMS_BASE,
+                homepage.hero.deviceImage as string | UploadDoc | undefined,
+            );
         }
 
-        // (Optional but nice) also normalize gallery images if present
-        if (Array.isArray(homepage?.gallery)) {
-            homepage.gallery = await Promise.all(
-                homepage.gallery.map(async (g: AnyObj) => ({
+        // Normalize gallery
+        if (homepage.gallery?.items && Array.isArray(homepage.gallery.items)) {
+            homepage.gallery.items = await Promise.all(
+                homepage.gallery.items.map(async (g) => ({
                     ...g,
-                    image: await toAbsoluteUploadUrl(CMS_BASE, g?.image),
+                    image: await toAbsoluteUploadUrl(CMS_BASE, g.image),
                 })),
             );
         }
 
         return homepage;
-    } catch (e: any) {
-        if (e?.name === "AbortError") {
-            // retry once without timeout (cold start/HMR)
-            const CMS_BASE = requireCmsUrl();
-            const retry = new URL("/api/globals/homepage", CMS_BASE);
+    } catch (e: unknown) {
+        if (e instanceof Error && e.name === "AbortError") {
+            // retry once without timeout
+            const retry = new URL("/api/globals/homepage", requireCmsUrl());
             retry.searchParams.set("locale", locale || "en");
             retry.searchParams.set("depth", "2");
-            const res2 = await fetch(retry.toString(), { cache: "no-store", headers: { Accept: "application/json" } });
+            const res2 = await fetch(retry.toString(), init);
             if (!res2.ok) {
                 const text = await res2.text().catch(() => "");
-                throw new Error(`Failed (after retry): ${res2.status} ${res2.statusText} - ${text}`);
+                throw new Error(
+                    `Failed (after retry): ${res2.status} ${res2.statusText} - ${text}`,
+                );
             }
             const homepage = (await res2.json()) as Homepage;
 
-            const hero = homepage?.hero as AnyObj | undefined;
-            if (hero) {
-                hero.deviceImage = await toAbsoluteUploadUrl(CMS_BASE, hero.deviceImage);
+            if (homepage.hero) {
+                homepage.hero.deviceImage = await toAbsoluteUploadUrl(
+                    CMS_BASE,
+                    homepage.hero.deviceImage as string | UploadDoc | undefined,
+                );
             }
-            if (Array.isArray(homepage?.gallery)) {
-                homepage.gallery = await Promise.all(
-                    homepage.gallery.map(async (g: AnyObj) => ({
+            if (homepage.gallery?.items && Array.isArray(homepage.gallery.items)) {
+                homepage.gallery.items = await Promise.all(
+                    homepage.gallery.items.map(async (g) => ({
                         ...g,
-                        image: await toAbsoluteUploadUrl(CMS_BASE, g?.image),
+                        image: await toAbsoluteUploadUrl(CMS_BASE, g.image),
                     })),
                 );
             }
@@ -168,10 +196,9 @@ export default async function Page({
     let homepage: Homepage | null = null;
     try {
         homepage = await getHomepageContent(resolvedLocale);
-    } catch (err) {
+    } catch (err: unknown) {
         console.error("[homepage] final error:", err);
     }
 
-    // HomeUI now receives hero.deviceImage as a guaranteed absolute URL string.
-    return <HomeUI homepage={homepage as any} locale={resolvedLocale} />;
+    return <HomeUI homepage={homepage} locale={resolvedLocale} />;
 }

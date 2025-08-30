@@ -113,10 +113,16 @@
 }
 
 @layer base {
-  * {
+    * {
     @apply border-border outline-ring/50;
-  }
-  body {
+    }
+    body {
     @apply bg-background text-foreground;
-  }
+    }
+    ::selection {
+        @apply bg-indigo-500 text-white;
+    }
+    ::-moz-selection {
+        @apply bg-indigo-500 text-white;
+    }
 }

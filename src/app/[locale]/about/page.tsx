@@ -1,20 +1,24 @@
 // app/[locale]/about/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import Image from "next/image";
+import { ArrowRight, Cpu, Compass, Users, ShieldCheck, Rocket } from "lucide-react";
 
-// Util: safe icon map (optional)
-import {
-    Cpu, Compass, Users, ShieldCheck, Rocket,
-} from "lucide-react";
-
-const ICONS: Record<string, React.ComponentType<{ className?: string; size?: number }>> = {
-    Cpu,
-    Compass,
-    Users,
-    ShieldCheck,
-    Rocket,
+/* -------------------- Types -------------------- */
+type UploadDoc = {
+    url?: string;
+    alt?: string | null;
+    [key: string]: unknown;
 };
+
+type RichTextLeaf = { text?: string };
+type RichTextNode = {
+    type?: string;
+    children?: Array<RichTextLeaf>;
+};
+type RichText = Array<RichTextNode>;
+
+type CTA = { label?: string | null; href?: string | null };
 
 type AboutGlobal = {
     seo?: {
@@ -26,12 +30,12 @@ type AboutGlobal = {
         kicker?: string | null;
         title?: string | null;
         subtitle?: string | null;
-        primaryCTA?: { label?: string | null; href?: string | null } | null;
-        secondaryCTA?: { label?: string | null; href?: string | null } | null;
+        primaryCTA?: CTA | null;
+        secondaryCTA?: CTA | null;
     };
     mission?: {
         title?: string | null;
-        body?: any; // richText JSON
+        body?: RichText; // richText JSON
     };
     values?: Array<{
         title?: string | null;
@@ -58,17 +62,49 @@ type AboutGlobal = {
     };
     footer?: {
         pitch?: string | null;
-        cta?: { label?: string | null; href?: string | null } | null;
+        cta?: CTA | null;
     };
 };
 
+/* -------------------- Icons (actually used) -------------------- */
+const ICONS: Record<
+    string,
+    React.ComponentType<{ className?: string; size?: number }>
+> = { Cpu, Compass, Users, ShieldCheck, Rocket };
+
+/* -------------------- Helpers -------------------- */
+function requireCmsUrl(): string {
+    const base = process.env.CMS_URL ?? process.env.NEXT_PUBLIC_CMS_URL;
+    if (!base) throw new Error("Missing CMS_URL or NEXT_PUBLIC_CMS_URL");
+    try {
+        return new URL(base).toString().replace(/\/$/, "");
+    } catch {
+        throw new Error(`Invalid CMS_URL "${base}" (must include http/https).`);
+    }
+}
+
+function toAbsolute(base: string, u?: string | null): string | undefined {
+    if (!u) return;
+    if (u.startsWith("http://") || u.startsWith("https://")) return u;
+    if (u.startsWith("/")) return `${base}${u}`;
+    return undefined;
+}
+
+function absoluteFromUploadish(
+    base: string,
+    val?: string | UploadDoc | null,
+): string | undefined {
+    if (!val) return;
+    if (typeof val === "string") return toAbsolute(base, val);
+    return toAbsolute(base, val.url);
+}
+
 async function getAbout(locale: string): Promise<AboutGlobal> {
-    const CMS_URL = process.env.NEXT_PUBLIC_CMS_URL;
-    if (!CMS_URL) throw new Error("Missing NEXT_PUBLIC_CMS_URL");
-    const res = await fetch(`${CMS_URL}/api/globals/about?locale=${locale}`, {
-        // revalidate often during dev; adjust as needed
-        next: { revalidate: 60 },
-    });
+    const CMS = requireCmsUrl();
+    const url = new URL("/api/globals/about", CMS);
+    url.searchParams.set("locale", locale);
+
+    const res = await fetch(url.toString(), { next: { revalidate: 60 } });
     if (!res.ok) {
         const txt = await res.text();
         throw new Error(`Failed to fetch About global: ${res.status} ${res.statusText} – ${txt}`);
@@ -76,6 +112,7 @@ async function getAbout(locale: string): Promise<AboutGlobal> {
     return res.json();
 }
 
+/* -------------------- Metadata -------------------- */
 export async function generateMetadata({
                                            params,
                                        }: {
@@ -83,6 +120,9 @@ export async function generateMetadata({
 }): Promise<Metadata> {
     const { locale } = await params;
     const data = await getAbout(locale);
+    const CMS = requireCmsUrl();
+
+    const ogUrl = absoluteFromUploadish(CMS, data.seo?.ogImage);
 
     return {
         title: data.seo?.metaTitle ?? "About",
@@ -90,13 +130,12 @@ export async function generateMetadata({
         openGraph: {
             title: data.seo?.metaTitle ?? undefined,
             description: data.seo?.metaDescription ?? undefined,
-            images: typeof data.seo?.ogImage === "object" && data.seo?.ogImage?.url
-                ? [{ url: data.seo.ogImage.url }]
-                : undefined,
+            images: ogUrl ? [{ url: ogUrl }] : undefined,
         },
     };
 }
 
+/* -------------------- Page -------------------- */
 export default async function AboutPage({
                                             params,
                                         }: {
@@ -105,6 +144,7 @@ export default async function AboutPage({
     const { locale } = await params;
     const isRTL = locale === "ar";
     const data = await getAbout(locale);
+    const CMS = requireCmsUrl();
 
     const pLink = (href?: string | null) =>
         href ? `/${locale}${href.startsWith("/") ? href : `/${href}`}` : undefined;
@@ -170,13 +210,18 @@ export default async function AboutPage({
                         <h2 className="text-lg font-semibold">{data.mission.title}</h2>
                     )}
 
-                    {/* RichText: keep it simple — Payload returns Slate-like JSON.
-              Render minimally or swap with your RT renderer. */}
+                    {/* Minimal rich-text render (no `any`) */}
                     {Array.isArray(data.mission?.body) && (
                         <div className="mt-3 text-sm text-white/75 space-y-3">
-                            {data.mission!.body!.map((n: any, i: number) => (
-                                <p key={i}>{n?.children?.map((c: any) => c?.text).join("")}</p>
-                            ))}
+                            {data.mission.body.map((n, i) => {
+                                const text =
+                                    Array.isArray(n.children)
+                                        ? n.children
+                                            .map((c) => (typeof c.text === "string" ? c.text : ""))
+                                            .join("")
+                                        : "";
+                                return <p key={i}>{text}</p>;
+                            })}
                         </div>
                     )}
                 </div>
@@ -203,34 +248,70 @@ export default async function AboutPage({
                 </div>
             </section>
 
+            {/* Values (now rendering icons to avoid unused-const warning) */}
+            {Array.isArray(data.values) && data.values.length > 0 && (
+                <section className="mt-8 rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-xl p-6">
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {data.values.map((v, i) => {
+                            const Icon = v.icon && ICONS[v.icon] ? ICONS[v.icon] : undefined;
+                            return (
+                                <div key={i} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                                    <div className="flex items-center gap-3">
+                                        {Icon ? (
+                                            <span className="inline-flex size-8 items-center justify-center rounded-lg border border-white/10 bg-white/10">
+                        <Icon className="size-4" />
+                      </span>
+                                        ) : null}
+                                        {v.title && <h3 className="text-sm font-semibold">{v.title}</h3>}
+                                    </div>
+                                    {v.description && (
+                                        <p className="mt-2 text-xs text-white/70">{v.description}</p>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </section>
+            )}
+
             {/* Team */}
             <section className="mt-8 rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-xl p-6">
                 <div className="flex items-center justify-between gap-4">
                     {data.team?.title && <h2 className="text-lg font-semibold">{data.team.title}</h2>}
-                    {/* Optional support link moved to CMS if needed */}
                 </div>
 
                 {data.team?.blurb && <p className="mt-3 text-sm text-white/75">{data.team.blurb}</p>}
 
                 <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {(data.team?.members ?? []).map((m, i) => (
-                        <div
-                            key={i}
-                            className="rounded-xl border border-white/10 bg-white/5 p-4 flex items-center gap-4"
-                        >
-                            <div className="size-10 rounded-lg bg-white/10 border border-white/10 overflow-hidden">
-                                {/* Show avatar if present */}
-                                {typeof m.avatar === "object" && m.avatar?.url ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={m.avatar.url} alt={m.name ?? ""} className="h-full w-full object-cover" />
-                                ) : null}
+                    {(data.team?.members ?? []).map((m, i) => {
+                        const avatarUrl =
+                            typeof m.avatar === "string"
+                                ? toAbsolute(CMS, m.avatar)
+                                : absoluteFromUploadish(CMS, m.avatar);
+
+                        return (
+                            <div
+                                key={i}
+                                className="rounded-xl border border-white/10 bg-white/5 p-4 flex items-center gap-4"
+                            >
+                                <div className="size-10 rounded-lg bg-white/10 border border-white/10 overflow-hidden relative">
+                                    {avatarUrl ? (
+                                        <Image
+                                            src={avatarUrl}
+                                            alt={m.name ?? ""}
+                                            fill
+                                            sizes="40px"
+                                            className="object-cover"
+                                        />
+                                    ) : null}
+                                </div>
+                                <div>
+                                    {m.name && <div className="text-sm font-medium">{m.name}</div>}
+                                    {m.role && <div className="text-xs text-white/70">{m.role}</div>}
+                                </div>
                             </div>
-                            <div>
-                                {m.name && <div className="text-sm font-medium">{m.name}</div>}
-                                {m.role && <div className="text-xs text-white/70">{m.role}</div>}
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </section>
 

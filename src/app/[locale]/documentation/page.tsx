@@ -1,4 +1,4 @@
-export default async function ContactPage() {
+export default async function DocumentationPage() {
     return (
         <main>
             <h2>Hello, World!</h2>
