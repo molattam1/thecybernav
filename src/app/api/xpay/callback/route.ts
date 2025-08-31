@@ -1,6 +1,5 @@
 // /app/api/xpay/callback/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { sendPaymentConfirmationToCustomer, sendPaymentNotificationToAdmin } from '@/lib/email/resend';
 
 interface XPayCallbackData {
   member_id: string | null;
@@ -41,57 +40,9 @@ export async function POST(request: NextRequest) {
     if (callbackData.transaction_status === 'SUCCESSFUL') {
       console.log(`Payment successful: ${callbackData.transaction_id}`);
       
-      try {
-        // Extract customer info and cart data from custom fields or transaction lookup
-        const customerName = 'Customer'; // You might want to store this in custom fields
-        const customerEmail = 'customer@example.com'; // Extract from transaction data
-        const amount = callbackData.total_amount;
-        const currency = 'EGP'; // Default or extract from callback
-        
-        // Mock cart items - in production, you'd fetch this from your database
-        const cartItems = [
-          {
-            name: 'Product Name',
-            quantity: 1,
-            price: amount
-          }
-        ];
-        
-        const emailData = {
-          customerName,
-          customerEmail,
-          transactionId: String(callbackData.payment_id),
-          transactionUuid: callbackData.transaction_id,
-          amount,
-          currency,
-          cartItems,
-          paymentMethod: 'Card'
-        };
-        
-        // Send emails in parallel
-        const [customerResult, adminResult] = await Promise.allSettled([
-          sendPaymentConfirmationToCustomer(emailData),
-          sendPaymentNotificationToAdmin(emailData)
-        ]);
-        
-        if (customerResult.status === 'fulfilled' && customerResult.value.success) {
-          console.log('Customer confirmation email sent successfully');
-        } else {
-          console.error('Failed to send customer email:', customerResult);
-        }
-        
-        if (adminResult.status === 'fulfilled' && adminResult.value.success) {
-          console.log('Admin notification email sent successfully');
-        } else {
-          console.error('Failed to send admin email:', adminResult);
-        }
-        
-      } catch (error) {
-        console.error('Error sending payment emails:', error);
-      }
-      
-      // TODO: Add additional business logic:
+      // TODO: Add your business logic here:
       // - Update order status in database
+      // - Send confirmation email
       // - Clear cart
       // - Update inventory
       

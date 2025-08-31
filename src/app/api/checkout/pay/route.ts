@@ -109,24 +109,7 @@ export async function POST(request: NextRequest) {
       language,
       community_id: process.env.XPAY_COMMUNITY_ID!,
       pay_using: paymentMethod,
-      custom_fields: [
-        {
-          field_label: 'customer_name',
-          field_value: billingData.name,
-        },
-        {
-          field_label: 'customer_email',
-          field_value: billingData.email,
-        },
-        {
-          field_label: 'cart_items_count',
-          field_value: cart.items.length,
-        },
-        {
-          field_label: 'currency',
-          field_value: currency,
-        }
-      ],
+      // Remove custom_fields for now to avoid validation issues
     });
 
     // Transaction data stored for potential future use
