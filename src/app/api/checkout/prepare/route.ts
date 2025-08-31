@@ -47,11 +47,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Prepare amount with XPay (convert to piasters: 1 EGP = 100 piasters)
-    const amountInPiasters = Math.round(subtotal * 100);
+    // Validate amount limits (XPay max: 999,999 piasters = 9,999.99 EGP)
+    const maxAmountEGP = 9999.99;
+    if (subtotal > maxAmountEGP) {
+      return NextResponse.json(
+        { error: `Cart total exceeds maximum limit of ${maxAmountEGP} EGP` },
+        { status: 400 }
+      );
+    }
+
+    // Prepare amount with XPay (use float value directly)
+    console.log('Prepare amounts:', {
+      subtotal,
+      currency,
+      paymentMethod
+    });
+    
     const xpayClient = createXPayClient();
     const prepareResponse = await xpayClient.prepareAmount({
-      amount: amountInPiasters,
+      amount: subtotal, // Use float value directly
       community_id: process.env.XPAY_COMMUNITY_ID!,
       currency,
       selected_payment_method: paymentMethod,
@@ -59,7 +73,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       original_amount: subtotal,
-      total_amount: prepareResponse.data.total_amount / 100, // Convert back from piasters
+      total_amount: prepareResponse.data.total_amount, // Use response value directly
       currency: prepareResponse.data.total_amount_currency,
       cart_items: cart.items.length,
     });

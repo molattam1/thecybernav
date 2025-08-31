@@ -32,6 +32,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // XPay requires name to be 2+ words
+    const nameParts = billingData.name.trim().split(/\s+/);
+    if (nameParts.length < 2) {
+      return NextResponse.json(
+        { error: 'Name must contain at least 2 words (first and last name)' },
+        { status: 400 }
+      );
+    }
+
     // Get cart data and calculate total
     const cart = await readCart();
     if (cart.items.length === 0) {
@@ -66,21 +75,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // First, prepare amount to get total with fees (convert to piasters: 1 EGP = 100 piasters)
-    const amountInPiasters = Math.round(originalAmount * 100);
+    // Validate amount limits (XPay max: 999,999 piasters = 9,999.99 EGP)
+    const maxAmountEGP = 9999.99;
+    if (originalAmount > maxAmountEGP) {
+      return NextResponse.json(
+        { error: `Cart total exceeds maximum limit of ${maxAmountEGP} EGP` },
+        { status: 400 }
+      );
+    }
+
+    // First, prepare amount to get total with fees (use float value directly)
+    console.log('Payment amounts:', {
+      originalAmount,
+      currency,
+      paymentMethod
+    });
+    
     const xpayClient = createXPayClient();
     const prepareResponse = await xpayClient.prepareAmount({
-      amount: amountInPiasters,
+      amount: originalAmount, // Use float value directly
       community_id: process.env.XPAY_COMMUNITY_ID!,
       currency,
       selected_payment_method: paymentMethod,
     });
 
-    // Create payment with XPay (convert total amount back from piasters to currency units)
-    const totalAmountInCurrency = prepareResponse.data.total_amount / 100;
+    // Create payment with XPay (use response values directly)
     const paymentResponse = await xpayClient.createPayment({
       billing_data: billingData,
-      amount: totalAmountInCurrency,
+      amount: prepareResponse.data.total_amount, // Use prepared total amount
       original_amount: originalAmount,
       currency,
       variable_amount_id: parseInt(process.env.XPAY_VARIABLE_AMOUNT_ID!),
@@ -89,12 +111,20 @@ export async function POST(request: NextRequest) {
       pay_using: paymentMethod,
       custom_fields: [
         {
+          field_label: 'customer_name',
+          field_value: billingData.name,
+        },
+        {
+          field_label: 'customer_email',
+          field_value: billingData.email,
+        },
+        {
           field_label: 'cart_items_count',
           field_value: cart.items.length,
         },
         {
-          field_label: 'order_timestamp',
-          field_value: Date.now(),
+          field_label: 'currency',
+          field_value: currency,
         }
       ],
     });
