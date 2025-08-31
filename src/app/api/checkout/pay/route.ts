@@ -66,19 +66,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // First, prepare amount to get total with fees
+    // First, prepare amount to get total with fees (convert to piasters: 1 EGP = 100 piasters)
+    const amountInPiasters = Math.round(originalAmount * 100);
     const xpayClient = createXPayClient();
     const prepareResponse = await xpayClient.prepareAmount({
-      amount: originalAmount,
+      amount: amountInPiasters,
       community_id: process.env.XPAY_COMMUNITY_ID!,
       currency,
       selected_payment_method: paymentMethod,
     });
 
-    // Create payment with XPay
+    // Create payment with XPay (convert total amount back from piasters to currency units)
+    const totalAmountInCurrency = prepareResponse.data.total_amount / 100;
     const paymentResponse = await xpayClient.createPayment({
       billing_data: billingData,
-      amount: prepareResponse.data.total_amount,
+      amount: totalAmountInCurrency,
       original_amount: originalAmount,
       currency,
       variable_amount_id: parseInt(process.env.XPAY_VARIABLE_AMOUNT_ID!),

@@ -24,20 +24,34 @@ export class XPayClient {
   async prepareAmount(request: XPayPrepareAmountRequest): Promise<XPayPrepareAmountResponse> {
     const url = `${this.config.baseUrl}/payments/prepare-amount/`;
     
+    const requestBody = {
+      ...request,
+      community_id: this.config.communityId,
+    };
+
+    console.log('XPay Prepare Amount URL:', url);
+    console.log('XPay Prepare Amount Request:', JSON.stringify(requestBody, null, 2));
+    console.log('XPay Prepare Amount Headers:', this.headers);
+    
     const response = await fetch(url, {
       method: 'POST',
       headers: this.headers,
-      body: JSON.stringify({
-        ...request,
-        community_id: this.config.communityId,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
+    const responseText = await response.text();
+    console.log('XPay Prepare Amount Response Status:', response.status);
+    console.log('XPay Prepare Amount Response Body:', responseText);
+
     if (!response.ok) {
-      throw new Error(`XPay prepare amount failed: ${response.status} ${response.statusText}`);
+      throw new Error(`XPay prepare amount failed: ${response.status} ${response.statusText}. Response: ${responseText}`);
     }
 
-    return response.json();
+    try {
+      return JSON.parse(responseText);
+    } catch {
+      throw new Error(`Invalid JSON response from XPay prepare amount: ${responseText}`);
+    }
   }
 
   async createPayment(request: XPayPaymentRequest): Promise<XPayPaymentResponse> {
