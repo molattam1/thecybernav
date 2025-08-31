@@ -1,7 +1,6 @@
 // /lib/cart/cookie.ts
 import { cookies } from "next/headers";
 import type { Cart } from "./types";
-import { seedTestCart } from "./test-seed";
 
 const COOKIE_NAME = "cart";
 const MAX_AGE_DAYS = 30;
@@ -13,20 +12,13 @@ function empty(): Cart {
 export async function readCart(): Promise<Cart> {
     const store = await cookies();                          // 👈 await
     const c = store.get(COOKIE_NAME)?.value;
-    if (!c) {
-        const emptyCart = empty();
-        return await seedTestCart(emptyCart);
-    }
+    if (!c) return empty();
     try {
         const parsed = JSON.parse(c) as Cart;
-        if (!Array.isArray(parsed.items)) {
-            const emptyCart = empty();
-            return await seedTestCart(emptyCart);
-        }
-        return await seedTestCart(parsed);
+        if (!Array.isArray(parsed.items)) return empty();
+        return parsed;
     } catch {
-        const emptyCart = empty();
-        return await seedTestCart(emptyCart);
+        return empty();
     }
 }
 

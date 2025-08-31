@@ -1,10 +1,10 @@
 // /lib/xpay/client.ts
 import type { 
-  XPayConfig, 
-  XPayPrepareAmountRequest, 
+  XPayConfig,
+  XPayPrepareAmountRequest,
   XPayPrepareAmountResponse,
   XPayPaymentRequest,
-  XPayPaymentResponse 
+  XPayPaymentResponse
 } from './types';
 
 export class XPayClient {
