@@ -9,7 +9,7 @@ interface XPayCallbackData {
   transaction_id: string;
   transaction_status: 'SUCCESSFUL' | 'FAILED';
   total_amount_piasters: number;
-  [key: string]: any; // For custom fields
+  [key: string]: string | number | boolean | null; // For custom fields
 }
 
 export async function POST(request: NextRequest) {
