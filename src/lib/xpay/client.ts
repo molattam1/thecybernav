@@ -81,8 +81,8 @@ export function createXPayClient(): XPayClient {
     communityId: process.env.XPAY_COMMUNITY_ID!,
     variableAmountId: parseInt(process.env.XPAY_VARIABLE_AMOUNT_ID!),
     baseUrl: process.env.NODE_ENV === 'production' 
-      ? 'https://community.xpay.app/api/v1'
-      : 'https://community.xpay.app/api/v1',
+      ? 'https://staging.xpay.app/api/v1/'
+      : 'https://staging.xpay.app/api/v1/',
     isProduction: process.env.NODE_ENV === 'production',
   };
 
